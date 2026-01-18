@@ -39,20 +39,6 @@ const installationStore = {
   },
 };
 
-// Authorize function
-async function authorize({ teamId }) {
-  const workspaceModel = require('./models/workspace');
-  const workspace = await workspaceModel.getWorkspaceByTeamId(teamId);
-  if (!workspace) {
-    throw new Error(`No installation found for team ${teamId}`);
-  }
-  return {
-    botToken: workspace.bot_token,
-    botId: workspace.bot_user_id,
-    botUserId: workspace.bot_user_id,
-  };
-}
-
 // Initialize Express receiver with OAuth
 const receiver = new ExpressReceiver({
   signingSecret: config.signingSecret,
@@ -67,10 +53,9 @@ const receiver = new ExpressReceiver({
   },
 });
 
-// Initialize Slack Bolt App
+// Initialize Slack Bolt App - NO authorize when using OAuth
 const app = new App({
   receiver: receiver,
-  authorize: authorize,
 });
 
 const expressApp = receiver.app;
@@ -110,7 +95,7 @@ app.event('app_home_opened', appHomeHandler.handleAppHomeOpened);
     console.log(`⚡️  Slack Performance Review Bot is running!`);
     console.log(`📡 Server listening on port ${config.port}`);
     console.log(`🔗 Install URL: ${config.baseUrl}/slack/install`);
-    console.log(`✅ OAuth configured with ExpressReceiver`);
+    console.log(`✅ OAuth configured`);
     
     if (supabase) {
       console.log('✅ Supabase connected');
