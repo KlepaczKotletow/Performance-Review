@@ -44,16 +44,16 @@ const receiver = new ExpressReceiver({
   signingSecret: config.signingSecret,
   clientId: config.clientId,
   clientSecret: config.clientSecret,
-  stateSecret: config.signingSecret,
+  stateSecret: 'my-state-secret-' + config.signingSecret,
   scopes: ['chat:write', 'commands', 'users:read', 'app_mentions:read', 'channels:read', 'im:history', 'im:read', 'im:write', 'users:read.email'],
   installationStore: installationStore,
   installerOptions: {
     directInstall: true,
-    redirectUriPath: '/slack/oauth_redirect',
+    stateVerification: false,  // Disable state verification for now
   },
 });
 
-// Initialize Slack Bolt App - NO authorize when using OAuth
+// Initialize Slack Bolt App
 const app = new App({
   receiver: receiver,
 });
