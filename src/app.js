@@ -1,14 +1,8 @@
 require('dotenv').config();
-const { App, ExpressReceiver } = require('@slack/bolt');
+const { App, ExpressReceiver, InstallProvider } = require('@slack/bolt');
 const express = require('express');
 const { supabase } = require('./database/connection');
 const config = require('./config/slack');
-
-// Initialize Express receiver for custom routes
-const receiver = new ExpressReceiver({
-  signingSecret: config.signingSecret,
-  processBeforeResponse: true,
-});
 
 // Custom installation store for database
 const installationStore = {
@@ -21,6 +15,7 @@ const installationStore = {
         installation.bot.token,
         installation.bot.id
       );
+      console.log('Installation stored for team:', installation.team.name);
     } catch (error) {
       if (logger) logger.error('Error storing installation:', error);
       console.error('Error storing installation:', error);
@@ -75,32 +70,33 @@ async function authorize({ teamId, enterpriseId }) {
   }
 }
 
-// Initialize Slack Bolt App
-// Use OAuth installer pattern for multi-workspace support
-const appConfig = {
+// Create InstallProvider for OAuth
+const installer = new InstallProvider({
+  clientId: config.clientId,
+  clientSecret: config.clientSecret,
+  stateSecret: config.signingSecret,
+  installationStore: installationStore,
+});
+
+// Initialize Express receiver
+const receiver = new ExpressReceiver({
   signingSecret: config.signingSecret,
-  receiver: receiver,
   processBeforeResponse: true,
-};
+  clientId: config.clientId,
+  clientSecret: config.clientSecret,
+  stateSecret: config.signingSecret,
+  scopes: ['chat:write', 'commands', 'users:read', 'app_mentions:read', 'channels:read', 'im:history', 'im:read', 'im:write', 'users:read.email'],
+  installationStore: installationStore,
+  installerOptions: {
+    redirectUriPath: '/slack/oauth_redirect',
+  },
+});
 
-// Use OAuth installer if credentials are provided
-if (config.clientId && config.clientSecret) {
-  appConfig.clientId = config.clientId;
-  appConfig.clientSecret = config.clientSecret;
-  appConfig.stateSecret = config.signingSecret;
-  appConfig.scopes = ['chat:write', 'commands', 'users:read', 'app_mentions:read', 'channels:read'];
-  appConfig.authorize = authorize;
-  appConfig.installationStore = installationStore;
-} else if (config.botToken) {
-  // Fallback to single workspace mode
-  console.warn('⚠️  Using single-workspace token mode. OAuth credentials recommended for production.');
-  appConfig.token = config.botToken;
-} else {
-  console.error('❌ No OAuth credentials or bot token provided. App cannot start.');
-  console.error('Please set SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, and SLACK_SIGNING_SECRET in Railway environment variables.');
-}
-
-const app = new App(appConfig);
+// Initialize Slack Bolt App
+const app = new App({
+  receiver: receiver,
+  authorize: authorize,
+});
 
 // Get Express app from receiver for custom routes
 const expressApp = receiver.app;
@@ -116,74 +112,63 @@ expressApp.get('/', (req, res) => {
   });
 });
 
-// OAuth installation page - Bolt installer will handle this automatically
-// But we can add a custom route for a nicer landing page
+// OAuth installation page
 expressApp.get('/slack/install', async (req, res) => {
-  // If installer is available, redirect to it
-  if (app.installer) {
-    return app.installer.handleInstallPath(req, res, {
-      scopes: ['chat:write', 'commands', 'users:read', 'app_mentions:read', 'channels:read'],
-      userScopes: [],
-      metadata: 'some_metadata',
+  try {
+    const url = await receiver.installer.generateInstallUrl({
+      scopes: ['chat:write', 'commands', 'users:read', 'app_mentions:read', 'channels:read', 'im:history', 'im:read', 'im:write', 'users:read.email'],
+      redirectUri: config.redirectUri,
     });
+    
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Add Performance Review Bot to Slack</title>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              min-height: 100vh;
+              margin: 0;
+              background: #f8f9fa;
+            }
+            .container {
+              text-align: center;
+              background: white;
+              padding: 2rem;
+              border-radius: 8px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            h1 { color: #333; margin-bottom: 1rem; }
+            p { color: #666; margin-bottom: 2rem; }
+            .btn {
+              display: inline-block;
+              background: #4A154B;
+              color: white;
+              padding: 12px 24px;
+              border-radius: 4px;
+              text-decoration: none;
+              font-weight: bold;
+            }
+            .btn:hover { background: #611f69; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>🎯 Performance Review Bot</h1>
+            <p>Bring 360° reviews and continuous feedback into Slack</p>
+            <a href="${url}" class="btn">Add to Slack</a>
+          </div>
+        </body>
+      </html>
+    `);
+  } catch (error) {
+    console.error('Install page error:', error);
+    res.status(500).send('Error generating install URL');
   }
-  
-  // Fallback to manual OAuth URL if installer not available
-  const authUrl = `https://slack.com/oauth/v2/authorize?client_id=${config.clientId}&scope=chat:write,commands,users:read,app_mentions:read,channels:read&redirect_uri=${encodeURIComponent(config.redirectUri)}`;
-  
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Add Performance Review Bot to Slack</title>
-        <style>
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-            background: #f8f9fa;
-          }
-          .container {
-            text-align: center;
-            background: white;
-            padding: 2rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-          }
-          h1 {
-            color: #333;
-            margin-bottom: 1rem;
-          }
-          p {
-            color: #666;
-            margin-bottom: 2rem;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <h1>🎯 Performance Review Bot</h1>
-          <p>Bring 360° reviews and continuous feedback into Slack</p>
-          <a href="${authUrl}">
-            <img alt="Add to Slack" height="40" width="139" src="https://platform.slack-edge.com/img/add_to_slack.png" srcset="https://platform.slack-edge.com/img/add_to_slack.png 1x, https://platform.slack-edge.com/img/add_to_slack@2x.png 2x" />
-          </a>
-        </div>
-      </body>
-    </html>
-  `);
-});
-
-// OAuth callback handler - Bolt installer handles this automatically
-expressApp.get('/slack/oauth_redirect', async (req, res) => {
-  if (app.installer) {
-    return app.installer.handleCallback(req, res);
-  }
-  
-  // Fallback if installer not available
-  res.send('OAuth callback - installer not configured');
 });
 
 // ===== IMPORT HANDLERS =====
@@ -224,8 +209,9 @@ app.event('app_home_opened', appHomeHandler.handleAppHomeOpened);
     await app.start(port);
     console.log(`⚡️  Slack Performance Review Bot is running!`);
     console.log(`📡 Server listening on port ${port}`);
-    console.log(`🔗 Install URL: http://localhost:${port}/slack/install`);
+    console.log(`🔗 Install URL: ${config.baseUrl}/slack/install`);
     console.log(`🌍 Node environment: ${config.nodeEnv}`);
+    console.log(`✅ OAuth installer configured`);
     
     if (!supabase) {
       console.warn('⚠️  Supabase not configured. Database features will be limited.');
