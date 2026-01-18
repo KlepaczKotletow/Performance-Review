@@ -1,0 +1,26 @@
+{
+  "name": "slack-performance-review",
+  "version": "1.0.0",
+  "description": "Slack-native performance review and continuous feedback bot",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["slack", "performance-review", "feedback", "bot"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@slack/bolt": "^4.6.0",
+    "@slack/web-api": "^7.0.0",
+    "@supabase/supabase-js": "^2.90.1",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "node-cron": "^3.0.3",
+    "openai": "^4.28.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}
