@@ -8,13 +8,22 @@ const installationStore = {
   async storeInstallation(installation, logger) {
     const workspaceModel = require('./models/workspace');
     try {
+      // Token rotation: Bolt provides refreshToken + expiresAt when enabled
+      const refreshToken = installation.bot?.refreshToken || installation.refreshToken || null;
+      const expiresAt = installation.bot?.expiresAt
+        ? new Date(installation.bot.expiresAt * 1000).toISOString()
+        : null;
+
       await workspaceModel.getOrCreateWorkspace(
         installation.team.id,
         installation.team.name,
         installation.bot.token,
-        installation.bot.id
+        installation.bot.id,
+        refreshToken,
+        expiresAt
       );
-      console.log('Installation stored for team:', installation.team.name);
+      console.log('Installation stored for team:', installation.team.name,
+        'has_refresh_token:', !!refreshToken, 'expires_at:', expiresAt);
     } catch (error) {
       console.error('Error storing installation:', error);
       throw error;
@@ -29,7 +38,14 @@ const installationStore = {
     }
     return {
       team: { id: workspace.team_id, name: workspace.team_name },
-      bot: { id: workspace.bot_user_id, token: workspace.bot_token },
+      bot: {
+        id: workspace.bot_user_id,
+        token: workspace.bot_token,
+        refreshToken: workspace.refresh_token || undefined,
+        expiresAt: workspace.token_expires_at
+          ? Math.floor(new Date(workspace.token_expires_at).getTime() / 1000)
+          : undefined,
+      },
     };
   },
 
